@@ -14,6 +14,17 @@ model User {
   name          String
   email         String
   emailVerified Boolean
+  deleted       Boolean    @default(false)
+  phone          String?   @unique
+  gender        Gender?
+  birthday       DateTime?
+  country      String?
+  city         String?
+  languages    String[]
+  educationLevel    String?
+  occupation      String?
+  incomeLevel     String?
+  interests     String[]
   image         String?
   createdAt     DateTime
   updatedAt     DateTime
@@ -27,6 +38,10 @@ model User {
 
   @@unique([email])
   @@map("user")
+  Survey Survey[]
+  Answer Answer[]
+  Wallet Wallet[]
+  Payment Payment[]
 }
 
 model Session {
@@ -74,4 +89,101 @@ model Verification {
   updatedAt  DateTime?
 
   @@map("verification")
+}
+
+model Survey{
+  id          String         @id @default(uuid())
+  creatorId    String
+  title        String
+  description  String
+  target       Json?
+  reward      Float
+  participant Int
+  maxParticipant  Int
+  status       SurveyStatus  @default(draft)
+  expireDate  DateTime
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user        User           @relation(fields: [creatorId], references: [id])
+
+  question Question[]
+}
+
+model Question{
+  id          String         @id @default(uuid())
+  surveyId    String
+  type        String
+  label       String
+  placeholder String?
+  required    Boolean             @default(false)
+  validation  Json?
+  options     Json? 
+  order       Int
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  survey      Survey         @relation(fields: [surveyId], references: [id])
+
+  answer Answer[]
+}
+
+model Answer {
+  id             String        @id @default(uuid())
+  questionId     String
+  userId         String
+  answer         String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  question       Question      @relation(fields: [questionId], references: [id])
+  user           User          @relation(fields: [userId] , references: [id])
+}
+
+model Wallet {
+  id          String           @id @default(uuid())
+  userId      String
+  balance      Float
+
+  user  User @relation(fields: [userId], references: [id])
+}
+
+model Payment {
+  id          String         @id @default(uuid())
+  userId      String
+  type        PaymentType
+  amount      Float
+  currency    String  @default("ETB")
+  status      PaymentStatus
+  transactionId   String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user        User @relation(fields: [userId], references: [id])
+}
+
+enum Gender {
+  male
+  female
+}
+
+enum SurveyStatus {
+    pending
+    live
+    ended
+    rejected
+    draft
+}
+
+enum PaymentType {
+  funding
+  withdrawal
+}
+
+enum PaymentStatus {
+  pending
+  success
+  failed
+  cancelled
+  error
 }
