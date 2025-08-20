@@ -8,13 +8,42 @@ export class SurveyService {
     constructor(private prisma: PrismaService) {}
   
 
-  createSurvey(createSurveyDto: CreateSurveyDto , id: string) {
-    // Set creatorId from the provided id argument
-    return this.prisma.survey.create({
-      data: {
-        ...createSurveyDto,
-        creatorId: id,
-      },
+  async createSurvey(createSurveyDto: CreateSurveyDto, id: string) {
+    // Extract questions and survey data
+    const { questions, ...surveyData } = createSurveyDto;
+    // Prepare question data (without surveyId)
+    const questionsData = questions.map(q => ({
+      ...q,
+      order: q.order ?? 0, // Ensure order is always a number
+    }));
+
+    // Use a transaction to ensure atomicity
+    return this.prisma.$transaction(async (prisma) => {
+      // Create the survey first (without questions)
+      const survey = await prisma.survey.create({
+        data: {
+          ...surveyData,
+          creatorId: id,
+        },
+      });
+
+      // Create each question and link to the survey
+      const createdQuestions = await Promise.all(
+        questionsData.map(q =>
+          prisma.question.create({
+            data: {
+              ...q,
+              surveyId: survey.id,
+            },
+          })
+        )
+      );
+
+      // Optionally, return the survey with its questions
+      return {
+        ...survey,
+        questions: createdQuestions,
+      };
     });
   }
 

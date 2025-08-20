@@ -14,12 +14,37 @@ import { ApiTags, ApiOperation, ApiBody , ApiResponse , ApiQuery } from '@nestjs
 export class SurveyController {
   constructor(private surveysService: SurveyService) {}
 
+  /**
+   * Create a new survey with questions. The request body must include survey details and an array of questions.
+   * The response includes the created survey and its questions.
+   *
+   * @param dto Survey creation payload
+   * @param session User session (creator)
+   */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('creator')
   @Post()
-  @ApiOperation({ summary: 'Create a new survey' })
-  @ApiBody({ type: CreateSurveyDto, description: 'Survey creation payload' })
-  @ApiResponse({ status: 201, description: 'Survey created successfully.' })
+  @ApiOperation({ summary: 'Create a new survey with questions' })
+  @ApiBody({ type: CreateSurveyDto, description: 'Survey creation payload including questions' })
+  @ApiResponse({ status: 201, description: 'Survey and questions created successfully.', schema: {
+    example: {
+      id: 'survey-uuid',
+      creatorId: 'user-uuid',
+      title: 'Customer Feedback',
+      description: 'Survey about customer satisfaction',
+      // ...other survey fields...
+      questions: [
+        {
+          id: 'question-uuid',
+          surveyId: 'survey-uuid',
+          type: 'text',
+          label: 'What do you think?',
+          order: 0,
+          // ...other question fields...
+        }
+      ]
+    }
+  } })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   create(@Body() dto: CreateSurveyDto, @Session() session: UserSession) {
