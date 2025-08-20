@@ -35,7 +35,7 @@ export class SurveyController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20, min: 10, max: 50)' })
   @ApiQuery({ name: 'status', required: false, enum: ['pending', 'live', 'ended', 'rejected', 'draft'], description: 'Survey status filter' })
   @ApiQuery({ name: 'expireDateFrom', required: false, type: String, description: 'Expire date from (ISO string)' })
   @ApiQuery({ name: 'expireDateTo', required: false, type: String, description: 'Expire date to (ISO string)' })
@@ -57,7 +57,8 @@ export class SurveyController {
       title,
       creatorId
     };
-    return this.surveysService.listSurveys(+page, +limit)(filters);
+  const safeLimit = Math.max(10, Math.min(+limit, 50));
+  return this.surveysService.listSurveys(+page, safeLimit)(filters);
   }
 
   @UseGuards(AuthGuard, RolesGuard)
@@ -69,7 +70,7 @@ export class SurveyController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20, min: 10, max: 50)' })
   @ApiQuery({ name: 'status', required: false, enum: ['pending', 'live', 'ended', 'rejected', 'draft'], description: 'Survey status filter' })
   @ApiQuery({ name: 'expireDateFrom', required: false, type: String, description: 'Expire date from (ISO string)' })
   @ApiQuery({ name: 'expireDateTo', required: false, type: String, description: 'Expire date to (ISO string)' })
@@ -89,7 +90,8 @@ export class SurveyController {
       expireDateTo: expireDateTo ? new Date(expireDateTo) : undefined,
       title,
     };
-    return this.surveysService.listCreatorSurveys(session.session.userId, +page, +limit)(filters);
+  const safeLimit = Math.max(10, Math.min(+limit, 50));
+  return this.surveysService.listCreatorSurveys(session.session.userId, +page, safeLimit)(filters);
   }
 
   @UseGuards(AuthGuard, RolesGuard)
