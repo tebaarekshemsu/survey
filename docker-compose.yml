@@ -1,6 +1,20 @@
 version: '3.8'
 
 services:
+#   survey-app:
+#     build: .
+#     container_name: survey-app
+#     restart: unless-stopped
+#     environment:
+#       - NODE_ENV=production
+#       - DATABASE_URL=postgresql://postgres:postgres123@survey-db:5432/survey_db
+#       - PORT=3000
+#     ports:
+#       - "3000:3000"
+#     depends_on:
+#       - postgres
+#     networks:
+#       - survey-network
   postgres:
     image: postgres:15
     container_name: survey-db
@@ -12,7 +26,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
     networks:
       - survey-network
 

@@ -2,13 +2,12 @@
 export enum Gender {
   Male = 'male',
   Female = 'female',
-  Other = 'other',
 }
 
 export enum Role {
   User = 'user',
   Admin = 'admin',
-  Moderator = 'moderator',
+  Creator = 'creator',
 }
 
 export class CreateUserDto {

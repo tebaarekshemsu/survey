@@ -30,7 +30,7 @@ model User {
   sessions       Session[]
   accounts       Account[]
 
-  role         Role?
+  role         String?
   banned       Boolean?
   banReason    String?
   banExpires   DateTime?
@@ -198,12 +198,6 @@ model Subscription {
 
   user             User             @relation(fields: [userId], references: [id])
   subscriptionType SubscriptionPlan @relation(fields: [plan], references: [id])
-}
-
-enum Role {
-  user
-  creator
-  admin
 }
 
 enum Gender {
