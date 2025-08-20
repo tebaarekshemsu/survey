@@ -101,8 +101,16 @@ export class SurveyController {
   @ApiResponse({ status: 200, description: 'List of user surveys.' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  listUserSurveys(@Session() session: UserSession) {
-    return this.surveysService.listUserSurveys(session.session.userId);
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 10, min: 1, max: 50)' })
+  listUserSurveys(
+    @Session() session: UserSession,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10
+  ) {
+    const safePage = Math.max(1, +page || 1);
+    const safeLimit = Math.max(1, Math.min(+limit || 10, 50));
+    return this.surveysService.listUserSurveys(session.session.userId, safePage, safeLimit);
   }
 
 
