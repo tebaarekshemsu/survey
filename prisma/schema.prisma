@@ -30,7 +30,7 @@ model User {
   sessions       Session[]
   accounts       Account[]
 
-  role         String?
+  role         Role           @default(user)
   banned       Boolean?
   banReason    String?
   banExpires   DateTime?
@@ -203,6 +203,12 @@ model Subscription {
 enum Gender {
   male
   female
+}
+
+enum Role {
+  user
+  creator
+  admin
 }
 
 enum SurveyStatus {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,8 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class SurveyService {
     constructor(private prisma: PrismaService) {}
   
-
-  async createSurvey(createSurveyDto: CreateSurveyDto, id: string) {
+  createSurvey(createSurveyDto: CreateSurveyDto, id: string) {
     // Extract questions and survey data
     const { questions, ...surveyData } = createSurveyDto;
     // Prepare question data (without surveyId)
@@ -24,6 +23,7 @@ export class SurveyService {
         data: {
           ...surveyData,
           creatorId: id,
+          status: 'pending', // Set default status to pending
         },
       });
 
@@ -46,8 +46,6 @@ export class SurveyService {
       };
     });
   }
-
-
 
   listSurveys( page: number , limit: number) {
     return (filters: {
@@ -130,6 +128,13 @@ export class SurveyService {
       where: { status: 'live' },
     });
 
+      // Fetch surveyIds where user has already participated
+      const participatedResponses = await this.prisma.response.findMany({
+        where: { userId },
+        select: { surveyId: true },
+      });
+      const participatedSurveyIds = new Set(participatedResponses.map(r => r.surveyId));
+
     // Filter surveys where the user matches the target criteria
     const stringSimilarity = (a: string, b: string) => {
       if (!a || !b) return 0;
@@ -155,38 +160,40 @@ export class SurveyService {
       return maxSim;
     };
 
-    const userSurveys = surveys.filter(survey => {
-      if (!survey.target) return true; // If no target, open to all
-      let targetObj: any = survey.target;
-      if (typeof targetObj !== 'object' || targetObj === null) {
-        try {
-          targetObj = JSON.parse(targetObj as string);
-        } catch {
-          return false;
+      const userSurveys = surveys.filter(survey => {
+        // Exclude if user already participated
+        if (participatedSurveyIds.has(survey.id)) return false;
+        if (!survey.target) return true; // If no target, open to all
+        let targetObj: any = survey.target;
+        if (typeof targetObj !== 'object' || targetObj === null) {
+          try {
+            targetObj = JSON.parse(targetObj as string);
+          } catch {
+            return false;
+          }
         }
-      }
-      // Check age
-      if (targetObj.ageMin !== undefined && userAge !== undefined && userAge < targetObj.ageMin) return false;
-      if (targetObj.ageMax !== undefined && userAge !== undefined && userAge > targetObj.ageMax) return false;
-      // Check gender
-      if (targetObj.gender && user.gender && targetObj.gender !== user.gender) return false;
-      // Check country
-      if (targetObj.country && user.country && targetObj.country !== user.country) return false;
-      // Check city
-      if (targetObj.city && user.city && targetObj.city !== user.city) return false;
-      // Check languages (fuzzy match)
-      if (targetObj.languages && user.languages && arraySimilarity(targetObj.languages, user.languages) < 0.5) return false;
-      // Check educationLevel (string similarity)
-      if (targetObj.educationLevel && user.educationLevel && stringSimilarity(targetObj.educationLevel, user.educationLevel) < 0.5) return false;
-      // Check occupation (string similarity)
-      if (targetObj.occupation && user.occupation && stringSimilarity(targetObj.occupation, user.occupation) < 0.5) return false;
-      // Check incomeLevel (range)
-      if (targetObj.incomeMin !== undefined && user.incomeLevel && !isNaN(Number(user.incomeLevel)) && Number(user.incomeLevel) < targetObj.incomeMin) return false;
-      if (targetObj.incomeMax !== undefined && user.incomeLevel && !isNaN(Number(user.incomeLevel)) && Number(user.incomeLevel) > targetObj.incomeMax) return false;
-      // Check interests (fuzzy match)
-      if (targetObj.interests && user.interests && arraySimilarity(targetObj.interests, user.interests) < 0.5) return false;
-      return true;
-    });
+        // Check age
+        if (targetObj.ageMin !== undefined && userAge !== undefined && userAge < targetObj.ageMin) return false;
+        if (targetObj.ageMax !== undefined && userAge !== undefined && userAge > targetObj.ageMax) return false;
+        // Check gender
+        if (targetObj.gender && user.gender && targetObj.gender !== user.gender) return false;
+        // Check country
+        if (targetObj.country && user.country && targetObj.country !== user.country) return false;
+        // Check city
+        if (targetObj.city && user.city && targetObj.city !== user.city) return false;
+        // Check languages (fuzzy match)
+        if (targetObj.languages && user.languages && arraySimilarity(targetObj.languages, user.languages) < 0.5) return false;
+        // Check educationLevel (string similarity)
+        if (targetObj.educationLevel && user.educationLevel && stringSimilarity(targetObj.educationLevel, user.educationLevel) < 0.5) return false;
+        // Check occupation (string similarity)
+        if (targetObj.occupation && user.occupation && stringSimilarity(targetObj.occupation, user.occupation) < 0.5) return false;
+        // Check incomeLevel (range)
+        if (targetObj.incomeMin !== undefined && user.incomeLevel && !isNaN(Number(user.incomeLevel)) && Number(user.incomeLevel) < targetObj.incomeMin) return false;
+        if (targetObj.incomeMax !== undefined && user.incomeLevel && !isNaN(Number(user.incomeLevel)) && Number(user.incomeLevel) > targetObj.incomeMax) return false;
+        // Check interests (fuzzy match)
+        if (targetObj.interests && user.interests && arraySimilarity(targetObj.interests, user.interests) < 0.5) return false;
+        return true;
+      });
 
     // Pagination
     const start = (page - 1) * limit;
@@ -198,11 +205,67 @@ export class SurveyService {
     return `This action returns a #${id} survey`;
   }
 
-  updateSurvey(id: string, updateSurveyDto: UpdateSurveyDto , userId: string) {
-    return `This action updates a #${id} survey`;
+  async updateSurvey(id: string, updateSurveyDto: UpdateSurveyDto, userId: string) {
+    const survey = await this.prisma.survey.findUnique({ where: { id } });
+    if (!survey) {
+      throw new NotFoundException('Survey not found');
+    }
+    if (survey.creatorId !== userId) {
+      throw new ForbiddenException('You are not allowed to update this survey');
+    }
+    return this.prisma.survey.update({
+      where: { id },
+      data: updateSurveyDto,
+    });
   }
 
-  deleteSurvey(id: string , userId: string) {
-    return `This action removes a #${id} survey`;
+  /**
+   * Update the status of a survey (admin: approve/reject, creator: live/draft)
+   * If admin approves, status becomes 'live'. If admin rejects, 'rejected'.
+   * If expireDate passed, status becomes 'ended'.
+   * Creator can set 'live' or 'draft' only if not ended or rejected.
+   */
+  async updateSurveyStatus(
+    id: string,
+    status: 'pending' | 'live' | 'ended' | 'rejected' | 'draft',
+    userId: string,
+    userRole: string
+  ) {
+    const survey = await this.prisma.survey.findUnique({ where: { id } });
+    if (!survey) throw new NotFoundException('Survey not found');
+
+    // If survey is ended or rejected, no further changes allowed
+    if (['ended', 'rejected'].includes(survey.status)) {
+      throw new ForbiddenException('Cannot change status of ended or rejected survey');
+    }
+
+    // If expireDate passed, set to ended
+    if (survey.expireDate && new Date(survey.expireDate) < new Date()) {
+      if (survey.status !== 'ended') {
+        await this.prisma.survey.update({ where: { id }, data: { status: 'ended' } });
+      }
+      throw new ForbiddenException('Survey has ended');
+    }
+
+    if (userRole === 'admin') {
+      if (status === 'rejected') {
+        return this.prisma.survey.update({ where: { id }, data: { status: 'rejected' } });
+      }
+      if (status === 'live') {
+        return this.prisma.survey.update({ where: { id }, data: { status: 'live' } });
+      }
+      if (status === 'pending' || status === 'draft') {
+        throw new ForbiddenException('Admin cannot set status to pending or draft');
+      }
+    } else if (userRole === 'creator') {
+      if (survey.creatorId !== userId) {
+        throw new ForbiddenException('You are not allowed to update this survey');
+      }
+      if (status === 'live' || status === 'draft') {
+        return this.prisma.survey.update({ where: { id }, data: { status } });
+      }
+      throw new ForbiddenException('Creator can only set status to live or draft');
+    }
+    throw new ForbiddenException('Invalid role or status');
   }
 }

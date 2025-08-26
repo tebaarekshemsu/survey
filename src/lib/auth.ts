@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { PrismaClient } from "../../generated/prisma";
-import { admin } from "better-auth/plugins";
+import { admin,customSession } from "better-auth/plugins";
 import { createAuthMiddleware, APIError } from "better-auth/api";
 import { EmailService } from "../common/email/email.service";
 
@@ -31,6 +31,22 @@ export const auth: ReturnType<typeof betterAuth> = betterAuth({
         };
       }
     }),
+
+    after: createAuthMiddleware(async (ctx )=>{
+
+      if (ctx.path === "/sign-up/email" || 
+        ctx.path === "/sign-in/email"
+      ){
+        const userId = ctx.context.returned?.user?.id;
+        if (userId){
+          const user = await prisma.user.findUnique({
+            where: {id: userId},
+            select: {role: true},
+          });
+          ctx.context.returned.user.role = user?.role;
+        }
+      }
+    }),
   },
 
   // Database hooks to intercept role assignment at the database level
@@ -57,6 +73,17 @@ export const auth: ReturnType<typeof betterAuth> = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+
+  user: {
+  additionalFields: {
+    role: {
+      type: "string",
+      required: true,
+      input: true, // role should not be passed directly from frontend
+    },
+  },
+},
+
   emailAndPassword: {
     enabled: true, 
     requireEmailVerification: true,
@@ -72,6 +99,6 @@ export const auth: ReturnType<typeof betterAuth> = betterAuth({
     },
   },
   plugins: [
-        admin() 
+        admin(), 
     ]
 });

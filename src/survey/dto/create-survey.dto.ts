@@ -25,20 +25,7 @@ export class CreateQuestionDto {
   order?: number;
 }
 
-export enum SurveyStatus {
-  pending = 'pending',
-  live = 'live',
-  ended = 'ended',
-  rejected = 'rejected',
-  draft = 'draft',
-}
-
 export class CreateSurveyDto {
-  @ApiPropertyOptional({ description: 'Survey ID (auto-generated)', type: String })
-  id?: string;
-
-  @ApiProperty({ description: 'ID of the creator', type: String })
-  creatorId: string;
 
   @ApiProperty({ description: 'Survey title', type: String })
   title: string;
@@ -58,17 +45,8 @@ export class CreateSurveyDto {
   @ApiProperty({ description: 'Maximum number of participants', type: Number })
   maxParticipant: number;
 
-  @ApiPropertyOptional({ enum: SurveyStatus, description: 'Survey status' })
-  status?: SurveyStatus;
-
   @ApiProperty({ description: 'Expiration date', type: Date })
   expireDate: Date;
-
-  @ApiPropertyOptional({ description: 'Creation date', type: Date })
-  createdAt?: Date;
-
-  @ApiPropertyOptional({ description: 'Last update date', type: Date })
-  updatedAt?: Date;
 
   @ApiProperty({
     description: 'List of questions for the survey',

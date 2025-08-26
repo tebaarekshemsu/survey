@@ -116,6 +116,8 @@ export class SurveyController {
       title,
     };
   const safeLimit = Math.max(10, Math.min(+limit, 50));
+      console.log(session)
+
   return this.surveysService.listCreatorSurveys(session.session.userId, +page, safeLimit)(filters);
   }
 
@@ -157,6 +159,7 @@ export class SurveyController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'Survey not found.' })
   update(@Param('id') id: string, @Body() dto: UpdateSurveyDto, @Session() session: UserSession) {
+    console.log(session)
     return this.surveysService.updateSurvey(id, dto, session.session.userId);
   }
 
@@ -170,8 +173,47 @@ export class SurveyController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'Survey not found.' })
   removeSurvey(@Param('id') id: string, @Session() session: UserSession) {
-    return this.surveysService.deleteSurvey(id, session.session.userId);
+    // return this.surveysService.deleteSurvey(id, session.session.userId);
   }
+
+  /**
+   * Update the status of a survey. Admins can approve/reject. Creators can change draft to live.
+   * @param id Survey ID
+   * @param body { status: string }
+   * @param session User session
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('admin', 'creator')
+  @Patch(':id/status')
+  @ApiOperation({ summary: 'Update survey status (admin: approve/reject, creator: draft → live)' })
+  @ApiBody({ schema: { example: { status: 'live' } }, description: 'New status for the survey' })
+  @ApiResponse({ status: 200, description: 'Survey status updated.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Survey not found.' })
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: 'live' | 'rejected' | 'pending' | 'ended' | 'draft',
+    @Session() session: any,
+    @Req() req: any
+  ) {
+    // Try to get user role from request.user (populated by AuthGuard), fallback to session.session.role
+    const userRole = session.user?.role || "user";
+    const userId = session.session?.userId;
+    if (userRole === 'admin') {
+      if (!['live', 'rejected'].includes(status)) {
+        return { error: 'Admin can only set status to live or rejected.' };
+      }
+    } else if (userRole === 'creator') {
+      if (!['live', 'draft'].includes(status)) {
+        return { error: 'Creator can only set status to live or draft.' };
+      }
+    } else {
+      return { error: 'Forbidden' };
+    }
+    return this.surveysService.updateSurveyStatus(id, status, userId, userRole);
+  }
+
 }
 
 
