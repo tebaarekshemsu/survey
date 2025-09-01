@@ -6,7 +6,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bodyParser: false, 
   });
-    // Swagger Documentation
+  app.enableCors();
+  // Swagger Documentation
   const config = new DocumentBuilder()
    .setTitle('Survey')
    .setDescription('The Survey API description')
