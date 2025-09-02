@@ -261,11 +261,28 @@ export class SurveyService {
       if (survey.creatorId !== userId) {
         throw new ForbiddenException('You are not allowed to update this survey');
       }
-      if (status === 'live' || status === 'draft') {
+      if (status === 'live') {
+        // Ensure survey is verified before going live
+        if (!survey.verified) {
+          throw new ForbiddenException('Survey must be verified before going live');
+        }
+        // Ensure creator has sufficient wallet balance
+        const wallet = await this.prisma.wallet.findFirst({ where: { userId } });
+        const requiredAmount = survey.maxParticipant * survey.reward;
+        if (!wallet || wallet.balance < requiredAmount) {
+          throw new ForbiddenException('Insufficient wallet balance to publish survey');
+        }
+        return this.prisma.survey.update({ where: { id }, data: { status } });
+      }
+      if (status === 'draft') {
         return this.prisma.survey.update({ where: { id }, data: { status } });
       }
       throw new ForbiddenException('Creator can only set status to live or draft');
     }
     throw new ForbiddenException('Invalid role or status');
   }
+
+ async approveSurvey(id: String, status:'accepted'| 'declined', reason: String){
+
+ }
 }

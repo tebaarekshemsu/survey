@@ -150,7 +150,7 @@ export class SurveyController {
   }
 
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('creator', 'admin')
+  @Roles('creator')
   @Patch(':id')
   @ApiOperation({ summary: 'Update a survey by ID' })
   @ApiBody({ type: UpdateSurveyDto, description: 'Survey update payload' })
@@ -212,6 +212,26 @@ export class SurveyController {
       return { error: 'Forbidden' };
     }
     return this.surveysService.updateSurveyStatus(id, status, userId, userRole);
+  }
+
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('admin')
+  @Patch(':id/approve')
+  @ApiOperation({ summary: 'Approve survey  (admin: accepted/declined)' })
+  @ApiBody({ schema: { example: { status: 'accepted' } }, description: 'New status for the survey' })
+  @ApiBody({ schema: { example: { reason: 'not enough reward' } }, description: 'reason if it is declined' })
+  @ApiResponse({ status: 200, description: 'Survey status updated.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Survey not found.' })
+  async approve(
+    @Param('id') id: string,
+    @Body('status') status: 'accepted'| 'declined' ,
+    @Body('reason') reason: string
+  ) {
+    // Try to get user role from request.user (populated by AuthGuard), fallback to session.session.role
+
+    return this.surveysService.approveSurvey(id, status, reason);
   }
 
 }

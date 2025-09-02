@@ -4,7 +4,27 @@ import { AppModule } from "./app.module";
  
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    bodyParser: false, 
+    bodyParser: false,
+  });
+  // Custom JSON parsing middleware for all routes except Better Auth
+  app.use((req, res, next) => {
+    // Skip raw parsing for Better Auth endpoints
+    if (req.originalUrl.startsWith('/api/auth')) {
+      return next();
+    }
+    // Only parse methods with a body
+    const methodsWithBody = ['POST', 'PUT', 'PATCH', 'DELETE'];
+    if (!methodsWithBody.includes(req.method)) {
+      return next();
+    }
+    // Buffer and parse JSON body
+    let raw = '';
+    req.on('data', chunk => { raw += chunk; });
+    req.on('end', () => {
+      try { (req as any).body = JSON.parse(raw); }
+      catch { (req as any).body = {}; }
+      next();
+    });
   });
   app.enableCors();
   // Swagger Documentation

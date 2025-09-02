@@ -1,14 +1,14 @@
-import { Request, Response  } from 'express';
-import { Controller, Get, Post, Body, Patch, Param, Delete, Req, Res ,UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Query, Headers } from '@nestjs/common';
 import { AuthGuard, Session, UserSession } from '@thallesp/nestjs-better-auth';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
 
 import { PaymentService } from './payment.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { UpdatePaymentDto } from './dto/update-payment.dto';
+import { ApproveWithdrawDto } from './dto/approve.dto';
 
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
+import constants from 'constants';
 
 /**
  * PaymentController handles all payment-related endpoints.
@@ -24,13 +24,18 @@ export class PaymentController {
    * Accepts a transaction reference from either query or request body.
    *
    * @param tx_ref - Transaction reference from query parameters.
-   * @param tx_ref_body - Transaction reference from the request body.
+   * @param req - The entire request object.
    */
   @Get('callback')
   @ApiOperation({ summary: 'Handle payment callback from Chapa provider' })
   @ApiResponse({ status: 200, description: 'Payment callback processed successfully.' })
-  chapaCallback(@Query('tx_ref') tx_ref: string, @Body('tx_ref') tx_ref_body: string) {
-    const result = this.paymentService.handleChapaCallback(tx_ref || tx_ref_body);
+  chapaCallback(
+    @Body() body: any,
+    @Headers() headers: any,
+  ) {
+  const tx_ref = body.trx_ref;
+    console.log('Transaction Reference:', tx_ref);
+    return this.paymentService.handleChapaCallback(tx_ref);
   }
 
   /**
@@ -69,6 +74,8 @@ export class PaymentController {
   })
   @ApiResponse({ status: 201, description: 'Payment funded successfully.' })
   create(@Body() createPaymentDto: CreatePaymentDto, @Session() session: UserSession) {
+    // Ensure amount is a number
+    createPaymentDto.amount = parseFloat(createPaymentDto.amount as unknown as string);
     return this.paymentService.fund(createPaymentDto, session.session.userId);
   }
 
@@ -134,6 +141,24 @@ export class PaymentController {
   }
 
   /**
+   * Approves a payment transfer.
+   *
+   * @param approveDto - Payload containing approval details.
+   * @param session - User session containing the user's user ID.
+   * @returns The result of the approval operation.
+   */
+  @Post('approve')
+  @ApiOperation({ summary: 'Approves a payment transfer.' })
+  @ApiBody({
+    type: Object,
+    description: 'Payload for approval operation. Example: { transferId: "tx_123" }'
+  })
+  @ApiResponse({ status: 200, description: 'Payment approved successfully.' })
+  async approvePayment(@Body() approveDto: ApproveWithdrawDto,) {
+    return await this.paymentService.approvePayment(approveDto);
+  }
+
+  /**
    * Retrieves all payment records.
    *
    * @returns A list of all payment records.
@@ -143,5 +168,33 @@ export class PaymentController {
   @ApiResponse({ status: 200, description: 'List of all payment records.' })
   findAll() {
     return this.paymentService.findAll();
+  }
+
+  /**
+   * Retrieves the list of available banks from Chapa.
+   *
+   * @returns A list of available banks.
+   */
+  @Get('banks')
+  @ApiOperation({ summary: 'Retrieves all available banks from Chapa.' })
+  @ApiResponse({ status: 200, description: 'List of available banks.' })
+  async getBanks() {
+    return await this.paymentService.listBanks();
+  }
+
+  /**
+   * Chapa server approval webhook.
+   *
+   * @param body - The request body containing approval information.
+   * @param signature - The signature header for request validation.
+   * @returns The result of the server approval operation.
+   */
+  @Post('server-approval')
+  @ApiOperation({ summary: 'Chapa server approval webhook' })
+  async serverApproval(
+    @Body() body: any,
+    @Headers('chapa-signature') signature: string,
+  ) {
+    return await this.paymentService.serverApproval(body, signature);
   }
 }
