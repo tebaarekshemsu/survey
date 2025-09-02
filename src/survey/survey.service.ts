@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, NotAcceptableException, BadRequestException } from '@nestjs/common';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,7 +23,7 @@ export class SurveyService {
         data: {
           ...surveyData,
           creatorId: id,
-          status: 'pending', // Set default status to pending
+          status: 'draft', // Set default status to pending
         },
       });
 
@@ -49,7 +49,7 @@ export class SurveyService {
 
   listSurveys( page: number , limit: number) {
     return (filters: {
-      status?: 'pending' | 'live' | 'ended' | 'rejected' | 'draft';
+      status?: 'live' | 'ended' |  'draft';
       expireDateFrom?: Date;
       expireDateTo?: Date;
       title?: string;
@@ -80,7 +80,7 @@ export class SurveyService {
 
   listCreatorSurveys(userId: string, page: number, limit: number) {
     return (filters: {
-      status?: 'pending' | 'live' | 'ended' | 'rejected' | 'draft';
+      status?: | 'live' | 'ended' | 'draft';
       expireDateFrom?: Date;
       expireDateTo?: Date;
       title?: string;
@@ -227,16 +227,14 @@ export class SurveyService {
    */
   async updateSurveyStatus(
     id: string,
-    status: 'pending' | 'live' | 'ended' | 'rejected' | 'draft',
-    userId: string,
-    userRole: string
-  ) {
+    status:  'live' | 'ended' | 'draft',
+    userId: string ) {
     const survey = await this.prisma.survey.findUnique({ where: { id } });
     if (!survey) throw new NotFoundException('Survey not found');
 
     // If survey is ended or rejected, no further changes allowed
-    if (['ended', 'rejected'].includes(survey.status)) {
-      throw new ForbiddenException('Cannot change status of ended or rejected survey');
+    if (survey.verified == 'declined') {
+      throw new ForbiddenException('Cannot change status of rejected survey');
     }
 
     // If expireDate passed, set to ended
@@ -247,23 +245,12 @@ export class SurveyService {
       throw new ForbiddenException('Survey has ended');
     }
 
-    if (userRole === 'admin') {
-      if (status === 'rejected') {
-        return this.prisma.survey.update({ where: { id }, data: { status: 'rejected' } });
-      }
-      if (status === 'live') {
-        return this.prisma.survey.update({ where: { id }, data: { status: 'live' } });
-      }
-      if (status === 'pending' || status === 'draft') {
-        throw new ForbiddenException('Admin cannot set status to pending or draft');
-      }
-    } else if (userRole === 'creator') {
       if (survey.creatorId !== userId) {
         throw new ForbiddenException('You are not allowed to update this survey');
       }
       if (status === 'live') {
         // Ensure survey is verified before going live
-        if (!survey.verified) {
+        if (survey.verified !== 'accepted') {
           throw new ForbiddenException('Survey must be verified before going live');
         }
         // Ensure creator has sufficient wallet balance
@@ -278,11 +265,23 @@ export class SurveyService {
         return this.prisma.survey.update({ where: { id }, data: { status } });
       }
       throw new ForbiddenException('Creator can only set status to live or draft');
-    }
-    throw new ForbiddenException('Invalid role or status');
   }
 
- async approveSurvey(id: String, status:'accepted'| 'declined', reason: String){
+ async approveSurvey(id: string, status:'accepted'| 'declined', reason: string){
+  const survey = await this.prisma.survey.findUnique({ where: { id } });
+    if (!survey) throw new NotFoundException('Survey not found');
 
+    if(survey.verified == 'accepted'){
+      throw new NotAcceptableException('already accepted')
+    }
+    if(status == 'accepted'){
+      return this.prisma.survey.update({ where: { id }, data: { verified:status} });
+      }
+    if(status == 'declined'){
+      if(!reason){
+        throw new BadRequestException('reason is required')
+      }
+      return this.prisma.survey.update({ where: { id }, data: { verified:status , declineReason: reason} });
+    }
  }
 }

@@ -69,7 +69,7 @@ export class SurveyController {
   listAll(
     @Query('page') page = 1,
     @Query('limit') limit = 20,
-    @Query('status') status?: 'pending' | 'live' | 'ended' | 'rejected' | 'draft',
+    @Query('status') status?:  'live' | 'ended' | 'draft',
     @Query('expireDateFrom') expireDateFrom?: string,
     @Query('expireDateTo') expireDateTo?: string,
     @Query('title') title?: string,
@@ -104,7 +104,7 @@ export class SurveyController {
     @Session() session: UserSession,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
-    @Query('status') status?: 'pending' | 'live' | 'ended' | 'rejected' | 'draft',
+    @Query('status') status?:  'live' | 'ended' | 'draft',
     @Query('expireDateFrom') expireDateFrom?: string,
     @Query('expireDateTo') expireDateTo?: string,
     @Query('title') title?: string
@@ -193,25 +193,12 @@ export class SurveyController {
   @ApiResponse({ status: 404, description: 'Survey not found.' })
   async updateStatus(
     @Param('id') id: string,
-    @Body('status') status: 'live' | 'rejected' | 'pending' | 'ended' | 'draft',
+    @Body('status') status: 'live' | 'ended' | 'draft',
     @Session() session: any,
-    @Req() req: any
   ) {
     // Try to get user role from request.user (populated by AuthGuard), fallback to session.session.role
-    const userRole = session.user?.role || "user";
     const userId = session.session?.userId;
-    if (userRole === 'admin') {
-      if (!['live', 'rejected'].includes(status)) {
-        return { error: 'Admin can only set status to live or rejected.' };
-      }
-    } else if (userRole === 'creator') {
-      if (!['live', 'draft'].includes(status)) {
-        return { error: 'Creator can only set status to live or draft.' };
-      }
-    } else {
-      return { error: 'Forbidden' };
-    }
-    return this.surveysService.updateSurveyStatus(id, status, userId, userRole);
+    return this.surveysService.updateSurveyStatus(id, status, userId);
   }
 
   @UseGuards(AuthGuard, RolesGuard)

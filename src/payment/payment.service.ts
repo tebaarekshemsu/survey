@@ -200,7 +200,7 @@ export class PaymentService {
     const activeSurveys = await this.prisma.survey.findMany({
       where: {
         creatorId: userId,
-        status: { in: ['pending', 'live'] }
+        status: { in: ['live'] }
       }
     });
 
