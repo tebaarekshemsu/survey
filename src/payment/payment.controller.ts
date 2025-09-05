@@ -1,14 +1,14 @@
-import { Controller, Get, Post, Body, UseGuards, Query, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Query, Headers, BadRequestException } from '@nestjs/common';
 import { AuthGuard, Session, UserSession } from '@thallesp/nestjs-better-auth';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
 
 import { PaymentService } from './payment.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { ApproveWithdrawDto } from './dto/approve.dto';
+import { WithdrawDto } from './dto/withdraw.dto'
 
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
-import constants from 'constants';
 
 /**
  * PaymentController handles all payment-related endpoints.
@@ -74,8 +74,12 @@ export class PaymentController {
   })
   @ApiResponse({ status: 201, description: 'Payment funded successfully.' })
   create(@Body() createPaymentDto: CreatePaymentDto, @Session() session: UserSession) {
-    // Ensure amount is a number
-    createPaymentDto.amount = parseFloat(createPaymentDto.amount as unknown as string);
+    // Validate and normalize amount
+    const amount = Number(createPaymentDto.amount);
+    if (Number.isNaN(amount) || amount <= 0) {
+      throw new BadRequestException('Invalid amount. Please provide a positive numeric value.');
+    }
+    createPaymentDto.amount = amount;
     return this.paymentService.fund(createPaymentDto, session.session.userId);
   }
 
@@ -91,7 +95,7 @@ export class PaymentController {
   @Post('withdraw')
   @ApiOperation({ summary: 'Initiates a withdrawal operation for a user.' })
   @ApiBody({
-    type: Object,
+    type: WithdrawDto,
     description: 'Payload for withdrawal operation.',
     examples: {
       example1: {
@@ -99,15 +103,15 @@ export class PaymentController {
           account_name: 'User Name',
           account_number: '12345678',
           amount: 50,
-          currency: 'ETB',
-          reference: 'ref001',
           bank_code: '001'
         }
       }
     }
   })
   @ApiResponse({ status: 201, description: 'Withdrawal processed successfully.' })
-  withdraw(@Body() withdrawDto, @Session() session: UserSession) {
+  withdraw(@Body() withdrawDto: WithdrawDto, @Session() session: UserSession) {
+    // ensure amount is a number
+    withdrawDto.amount = parseFloat(withdrawDto.amount as unknown as string);
     return this.paymentService.withdraw(withdrawDto, session.session.userId);
   }
 
@@ -154,8 +158,10 @@ export class PaymentController {
     description: 'Payload for approval operation. Example: { transferId: "tx_123" }'
   })
   @ApiResponse({ status: 200, description: 'Payment approved successfully.' })
-  async approvePayment(@Body() approveDto: ApproveWithdrawDto,) {
-    return await this.paymentService.approvePayment(approveDto);
+  async approvePayment(@Body() body:any, @Headers('chapa-signature') signature: string) {
+    console.log("incomming.....")
+    console.log(body)
+    return await this.paymentService.serverApproval(body , signature);
   }
 
   /**

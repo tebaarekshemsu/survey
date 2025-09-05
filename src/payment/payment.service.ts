@@ -1,5 +1,5 @@
 import { WithdrawDto } from './dto/withdraw.dto';
-import { Injectable, Inject, HttpException } from '@nestjs/common';
+import { Injectable, Inject, HttpException, BadRequestException } from '@nestjs/common';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { ApproveWithdrawDto } from './dto/approve.dto';
@@ -18,34 +18,45 @@ export class PaymentService {
    * @returns A unique transaction key as a string, e.g. "tx_...".
    */
   generateTransactionKey(): string {
-    return `tx_${uuidv4()}`;
+    // Use a UUID without dashes (32 chars) and prefix with 'tx_' (3 chars) => 35 chars total.
+    // Slice to 36 as a safety-net to guarantee the reference meets Chapa's 36-char limit.
+    const id = uuidv4().replace(/-/g, '');
+    const tx = `tx_${id}`;
+    return tx.slice(0, 36);
   }
 
-  async fund(createPaymentDto: any , userId: string) {
+  async fund(createPaymentDto: CreatePaymentDto, userId: string) {
+    // normalize & validate amount again on the service layer
+    const amount = Number(createPaymentDto.amount);
+    if (Number.isNaN(amount) || amount <= 0) {
+      throw new BadRequestException('Invalid amount provided for funding.');
+    }
 
-    console.log(createPaymentDto)
+    const tx_ref = this.generateTransactionKey();
 
+    // 1. Create payment record with pending status and connect the user relation
+    const payment = await this.prisma.payment.create({
+      data: {
+        // connect the existing user record (Prisma expects relation)
+        user: { connect: { id: userId } },
+        type: 'fund',
+        amount,
+        currency: 'ETB',
+        transactionId: tx_ref,
+        status: 'pending',
+        metadata: {
+          amount
+        },
+        // ...other fields as needed...
+      },
+    });
+
+    // 2. Prepare Chapa API payload
     const user = await this.prisma.user.findFirst({ where: { id: userId }, select: {
       name: true,
       email: true
     }});
 
-    const tx_ref = this.generateTransactionKey();
-
-    // 1. Create payment record with pending status
-    const payment = await this.prisma.payment.create({
-      data: {
-        userId,
-        type: 'fund',
-        amount: createPaymentDto.amount,
-        currency: 'ETB',
-        transactionId: tx_ref,
-        status: 'pending',
-        metadata: JSON.parse(JSON.stringify(createPaymentDto)),
-      },
-    });
-
-    // 2. Prepare Chapa API payload
     const [firstName, lastName] = user?.name.split(' ') || ['Unknown', 'User'];
     const chapaPayload = {
       amount: createPaymentDto.amount,
@@ -152,38 +163,68 @@ export class PaymentService {
     // 2. Create a payment record for withdrawal in pending status
     const payment = await this.prisma.payment.create({
       data: {
-        userId,
+        // switch from scalar userId to a relation connect
+        user: { connect: { id: userId } },
         type: 'withdraw',
         amount: withdrawDto.amount,
-        currency: withdrawDto.currency || 'ETB',
+        currency: 'ETB',
         status: 'pending',
         transactionId: tx_ref,
         metadata: JSON.parse(JSON.stringify(withdrawDto)),
       },
     });
 
-  // 3. Prepare Chapa transfer payload (wallet will be updated on approval)
+    // 2.5 Reserve funds immediately: decrement balance and increment totalSpend
+    await this.prisma.wallet.update({
+      where: { id: wallet.id },
+      data: {
+        balance: { decrement: withdrawDto.amount },
+      },
+    });
+
+  // 3. Prepare Chapa transfer payload (wallet will be finalized on success or rolled back on failure)
     const payload = {
       account_name: withdrawDto.account_name,
       account_number: withdrawDto.account_number,
       amount: String(withdrawDto.amount),
-      currency: withdrawDto.currency || 'ETB',
+      currency: 'ETB',
       reference: tx_ref,
       bank_code: withdrawDto.bank_code,
     };
 
-    // 5. Call Chapa Transfer API
+    // 4. Call Chapa Transfer API
     try {
       const res = await axios.post(
         'https://api.chapa.co/v1/transfers',
         payload,
         { headers: { Authorization: `Bearer ${process.env.CHAPA_SECRET_KEY}`, 'Content-Type': 'application/json' } },
       );
-      // Leave payment status as pending; wallet will update on approval webhook
+
+      // If Chapa indicates success -> finalize payment as success
+      if (res.data && res.data.status === 'success') {
+        await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'success' } });
+        return { payment, chapaResponse: res.data };
+      }
+
+      // Otherwise treat as failed: mark payment failed and rollback wallet reservation
+      await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'failed' } });
+      await this.prisma.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: { increment: withdrawDto.amount },        },
+      });
+
       return { payment, chapaResponse: res.data };
     } catch (error) {
-      // Mark payment as failed on error
-      await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'failed' } });
+      // Rollback wallet reservation on error and mark payment as failed
+      await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'failed' } }).catch(() => {});
+      await this.prisma.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: { increment: withdrawDto.amount },
+        },
+      }).catch(() => {});
+
       throw new HttpException(error.response?.data || error.message, 500);
     }
   }
